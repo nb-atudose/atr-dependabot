@@ -1,0 +1,74 @@
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: DevOps/Templates
+
+
+trigger:
+- '*'
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+- name: release
+  value: $[variables['Build.SourceBranchName']]
+- name: solution
+  value: '**/*.sln'
+
+- name: buildPlatform
+  value: 'Any CPU'
+
+- name: buildConfiguration
+  value: 'Release'
+
+- name: appName
+  value: 'HelloNetCore'
+
+- name: fullBuild
+  value: $[ or(eq( variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'), contains(variables.release,'release_'),contains(variables.release,'Release_')) ]
+  
+
+stages:
+
+- stage: Build
+  jobs:
+    # this is used only for debugging purposes
+  - job: ArtifactBuild
+    steps:
+    - script: echo 'Variable value $(fullBuild) branchname $(release) '
+
+    - task: NuGetToolInstaller@1
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet build'
+      inputs:
+        command: 'build'
+        arguments: 'HelloNetCore.sln -c $(buildConfiguration)'
+        vstsFeed:  'aeb26399-af20-4c6a-aa43-f8272cb72599'
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet publish'
+      inputs:
+        command: 'publish'
+        publishWebProjects: true
+        arguments: '-r win-x64 -p:PublishReadyToRun=true --output $(Build.ArtifactStagingDirectory)'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet test'
+      inputs:
+        command: 'test'
+        publishTestResults: false
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: $(appName)
+
+    # ##########################################################
+    # ### parameter is optional 
+    # ###   but without it's a full security scan will run every time
+    # ##########################################################
+  - template: security/default_security_scan_sln.yml@templates
+    parameters:
+      fullScan: eq( variables['fullBuild'], true )
